@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: "Release name (tag). If not set, uses GITHUB_REF_NAME"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Upload curlb Binaries
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [arm64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version: "1.25.5"
+
+      - name: Build and zip curlb binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          bin_name="curlb"
+          build_dir="dist/${bin_name}-${GOOS}-${GOARCH}"
+          mkdir -p "$build_dir"
+          go build -o "$build_dir/$bin_name" ./cmd/curlb
+          cd dist
+          zip -r "${bin_name}-${GOOS}-${GOARCH}.zip" "${bin_name}-${GOOS}-${GOARCH}"
+          cd ..
+
+      - name: Upload Release Asset (zip)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_NAME="${{ github.event.inputs.release_name }}"
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="$GITHUB_REF_NAME"
+          fi
+          gh release upload "$RELEASE_NAME" dist/curlb-${{ matrix.goos }}-${{ matrix.goarch }}.zip --clobber
